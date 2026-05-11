@@ -236,7 +236,7 @@ CPad.PaddingRight  = UDim.new(0, 8)
 CPad.PaddingBottom = UDim.new(0, 6)
 
 -- ============================================================
--- COMPONENTES UI  (idénticos al estilo de referencia)
+-- COMPONENTES UI
 -- ============================================================
 local function Section(text)
     local frame = Instance.new("Frame", Content)
@@ -369,28 +369,20 @@ local function Slider(text, minV, maxV, def, unit, onChange)
         if onChange then onChange(val) end
     end
 
-    -- Mouse
     hit.MouseButton1Down:Connect(function()
         drag = true
         local c; c = RS_svc.Heartbeat:Connect(function()
             if drag then upd(Mouse.X) else c:Disconnect() end
         end)
     end)
-
-    -- Touch
     hit.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.Touch then
-            drag = true
-            upd(i.Position.X)
+            drag = true; upd(i.Position.X)
         end
     end)
-
     UIS.InputChanged:Connect(function(i)
-        if drag and i.UserInputType == Enum.UserInputType.Touch then
-            upd(i.Position.X)
-        end
+        if drag and i.UserInputType == Enum.UserInputType.Touch then upd(i.Position.X) end
     end)
-
     UIS.InputEnded:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
             drag = false
@@ -404,7 +396,6 @@ local function InfoRow(key, value, vc)
     row.BackgroundColor3 = Color3.fromRGB(20, 18, 32)
     row.BorderSizePixel  = 0
     Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
-
     local kL = Instance.new("TextLabel", row)
     kL.Size           = UDim2.new(0.55, -8, 1, 0)
     kL.Position       = UDim2.new(0, 8, 0, 0)
@@ -414,7 +405,6 @@ local function InfoRow(key, value, vc)
     kL.TextColor3     = Color3.fromRGB(140, 120, 180)
     kL.TextXAlignment = Enum.TextXAlignment.Left
     kL.BackgroundTransparency = 1
-
     local vL = Instance.new("TextLabel", row)
     vL.Size           = UDim2.new(0.45, -8, 1, 0)
     vL.Position       = UDim2.new(0.55, 0, 0, 0)
@@ -608,7 +598,6 @@ Toggle("Player ESP", Color3.fromRGB(100, 180, 255), function(v)
             for _, p in pairs(Players:GetPlayers()) do
                 if p == LP or not p.Character then continue end
                 local char = p.Character
-
                 if not char:FindFirstChild("_mel_hl") then
                     local h = Instance.new("Highlight", char); h.Name = "_mel_hl"
                     h.FillTransparency   = 0.4
@@ -625,7 +614,6 @@ Toggle("Player ESP", Color3.fromRGB(100, 180, 255), function(v)
                         hl.FillColor = Color3.fromRGB(100,180,255); hl.OutlineColor = Color3.fromRGB(160,210,255)
                     end
                 end
-
                 local head = char:FindFirstChild("Head")
                 if head and not head:FindFirstChild("_mel_bb") then
                     local bb = Instance.new("BillboardGui", head); bb.Name = "_mel_bb"
@@ -638,12 +626,10 @@ Toggle("Player ESP", Color3.fromRGB(100, 180, 255), function(v)
                     sL.Font = Enum.Font.SourceSans; sL.TextSize = 11
                     sL.BackgroundTransparency = 1; sL.TextStrokeTransparency = 0.3
                 end
-
                 local bb = head and head:FindFirstChild("_mel_bb"); if not bb then continue end
-                local nL, sL   = bb:FindFirstChild("N"), bb:FindFirstChild("S")
-                local myHRP    = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-                local thHRP    = char:FindFirstChild("HumanoidRootPart")
-
+                local nL, sL = bb:FindFirstChild("N"), bb:FindFirstChild("S")
+                local myHRP  = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                local thHRP  = char:FindFirstChild("HumanoidRootPart")
                 if nL then
                     if isBeast(p) then nL.Text = "BEAST: "..p.Name; nL.TextColor3 = Color3.fromRGB(255,80,80)
                     else nL.Text = p.Name; nL.TextColor3 = Color3.fromRGB(200,220,255) end
@@ -671,47 +657,50 @@ Toggle("Player ESP", Color3.fromRGB(100, 180, 255), function(v)
     end
 end)
 
+-- ── COMPUTER ESP ARREGLADO ───────────────────────────────────
 Toggle("Computer ESP", Color3.fromRGB(0, 220, 180), function(v)
     if v then
+        for _, obj in pairs(WS:GetDescendants()) do
+            if obj.Name ~= "ComputerTable" then continue end
+            local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))
+                         or (obj:IsA("BasePart") and obj)
+            if not target then continue end
+            if not obj:FindFirstChild("_mel_chl") then
+                local h = Instance.new("Highlight", obj); h.Name = "_mel_chl"
+                h.FillTransparency = 0.4; h.OutlineTransparency = 0
+                h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+            end
+            if not target:FindFirstChild("_mel_cbb") then
+                local bb = Instance.new("BillboardGui", target); bb.Name = "_mel_cbb"
+                bb.Size = UDim2.fromOffset(130, 44); bb.StudsOffset = Vector3.new(0, 4, 0); bb.AlwaysOnTop = true
+                local nL = Instance.new("TextLabel", bb); nL.Name = "N"
+                nL.Size = UDim2.new(1,0,0.5,0); nL.Text = "Computer"
+                nL.Font = Enum.Font.SourceSansBold; nL.TextSize = 11
+                nL.BackgroundTransparency = 1; nL.TextStrokeTransparency = 0.3
+                local sL = Instance.new("TextLabel", bb); sL.Name = "S"
+                sL.Size = UDim2.new(1,0,0.5,0); sL.Position = UDim2.new(0,0,0.5,0)
+                sL.Font = Enum.Font.SourceSans; sL.TextSize = 11
+                sL.BackgroundTransparency = 1; sL.TextStrokeTransparency = 0.3
+            end
+        end
         RS_svc:BindToRenderStep("MEL_CESP", 1, function()
             for _, obj in pairs(WS:GetDescendants()) do
                 if obj.Name ~= "ComputerTable" then continue end
                 local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))
                              or (obj:IsA("BasePart") and obj)
                 if not target then continue end
-                if not obj:FindFirstChild("_mel_chl") then
-                    local h = Instance.new("Highlight", obj); h.Name = "_mel_chl"
-                    h.FillTransparency = 0.4; h.OutlineTransparency = 0
-                    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                end
-                if not target:FindFirstChild("_mel_cbb") then
-                    local bb = Instance.new("BillboardGui", target); bb.Name = "_mel_cbb"
-                    bb.Size = UDim2.fromOffset(130, 44); bb.StudsOffset = Vector3.new(0, 4, 0); bb.AlwaysOnTop = true
-                    local nL = Instance.new("TextLabel", bb); nL.Name = "N"
-                    nL.Size = UDim2.new(1,0,0.5,0); nL.Text = "Computer"
-                    nL.Font = Enum.Font.SourceSansBold; nL.TextSize = 11
-                    nL.BackgroundTransparency = 1; nL.TextStrokeTransparency = 0.3
-                    local sL = Instance.new("TextLabel", bb); sL.Name = "S"
-                    sL.Size = UDim2.new(1,0,0.5,0); sL.Position = UDim2.new(0,0,0.5,0)
-                    sL.Font = Enum.Font.SourceSans; sL.TextSize = 11
-                    sL.BackgroundTransparency = 1; sL.TextStrokeTransparency = 0.3
-                end
                 local hl = obj:FindFirstChild("_mel_chl")
                 local bb = target:FindFirstChild("_mel_cbb")
                 if not (hl and bb) then continue end
-                local scr    = obj:FindFirstChild("Screen", true)
-                local hacked = scr and scr:IsA("BasePart") and scr.Color.G > 0.6 and scr.Color.R < 0.4
-                local nL, sL = bb:FindFirstChild("N"), bb:FindFirstChild("S")
-                local dist   = HRP and math.floor((target.Position - HRP.Position).Magnitude) or 0
-                if hacked then
-                    hl.FillColor = Color3.fromRGB(80,255,80); hl.OutlineColor = Color3.fromRGB(150,255,150)
-                    if nL then nL.TextColor3 = Color3.fromRGB(80,255,80) end
-                    if sL then sL.Text = "HACKEADO  "..dist.."m"; sL.TextColor3 = Color3.fromRGB(80,255,80) end
-                else
-                    hl.FillColor = Color3.fromRGB(0,180,255); hl.OutlineColor = Color3.fromRGB(100,220,255)
-                    if nL then nL.TextColor3 = Color3.fromRGB(100,220,255) end
-                    if sL then sL.Text = "Pendiente  "..dist.."m"; sL.TextColor3 = Color3.fromRGB(100,220,255) end
-                end
+                local scr      = obj:FindFirstChild("Screen", true)
+                local espColor = (scr and scr:IsA("BasePart")) and scr.Color or Color3.fromRGB(0, 180, 255)
+                local nL       = bb:FindFirstChild("N")
+                local sL       = bb:FindFirstChild("S")
+                local dist     = HRP and math.floor((target.Position - HRP.Position).Magnitude) or 0
+                hl.FillColor    = espColor
+                hl.OutlineColor = espColor
+                if nL then nL.TextColor3 = espColor end
+                if sL then sL.Text = dist.."m"; sL.TextColor3 = espColor end
             end
         end)
     else
@@ -848,8 +837,14 @@ Toggle("Infinity Jump", Color3.fromRGB(160, 120, 255), function(v)
     FTF.infJump = v
 end)
 
+-- ── NOCLIP ARREGLADO ─────────────────────────────────────────
 Toggle("Noclip", Color3.fromRGB(160, 120, 255), function(v)
     FTF.noclip = v
+    if not v and Char then
+        for _, p in pairs(Char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = true end
+        end
+    end
 end)
 
 Slider("TP Walk Speed", 10, 300, 60, "", function(v)
@@ -966,9 +961,9 @@ end)
 -- INFO
 -- ============================================================
 Section("~ INFO ~")
-InfoRow("Juego:",      "Flee the Facility")
-InfoRow("Toggle:",     "RightShift")
-InfoRow("Script:",     "by @iord4nn.v")
+InfoRow("Juego:",  "Flee the Facility")
+InfoRow("Toggle:", "RightShift")
+InfoRow("Script:", "by @iord4nn.v")
 
 -- ============================================================
 -- HOTKEYS
@@ -1012,25 +1007,21 @@ local function Notify(title, body)
     Instance.new("UICorner", n).CornerRadius = UDim.new(0, 10)
     local st = Instance.new("UIStroke", n)
     st.Color = Color3.fromRGB(80, 40, 160); st.Thickness = 1.2
-
     local bar = Instance.new("Frame", n)
     bar.Size             = UDim2.fromOffset(3, 56)
     bar.BackgroundColor3 = Color3.fromRGB(120, 60, 240)
     bar.BorderSizePixel  = 0
     Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 2)
-
     local tL = Instance.new("TextLabel", n)
     tL.Size = UDim2.new(1,-14,0,20); tL.Position = UDim2.fromOffset(12, 8)
     tL.Text = title; tL.Font = Enum.Font.SourceSansBold; tL.TextSize = 13
     tL.TextColor3 = Color3.fromRGB(200,170,255); tL.BackgroundTransparency = 1
     tL.TextXAlignment = Enum.TextXAlignment.Left; tL.ZIndex = 100
-
     local bL = Instance.new("TextLabel", n)
     bL.Size = UDim2.new(1,-14,0,16); bL.Position = UDim2.fromOffset(12, 30)
     bL.Text = body; bL.Font = Enum.Font.SourceSans; bL.TextSize = 11
     bL.TextColor3 = Color3.fromRGB(120,90,180); bL.BackgroundTransparency = 1
     bL.TextXAlignment = Enum.TextXAlignment.Left; bL.ZIndex = 100
-
     TS:Create(n, TweenInfo.new(0.38, Enum.EasingStyle.Quad), { Position = UDim2.new(1,-274,1,-68) }):Play()
     task.delay(3.5, function()
         TS:Create(n, TweenInfo.new(0.38, Enum.EasingStyle.Quad), { Position = UDim2.new(1,10,1,-68) }):Play()
