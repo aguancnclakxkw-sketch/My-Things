@@ -840,11 +840,6 @@ end)
 -- ── NOCLIP ARREGLADO ─────────────────────────────────────────
 Toggle("Noclip", Color3.fromRGB(160, 120, 255), function(v)
     FTF.noclip = v
-    if not v and Char then
-        for _, c in pairs(Char:GetDescendants()) do
-            if c:IsA("BasePart") then c.CanCollide = true end
-        end
-    end
 end)
 
 Slider("TP Walk Speed", 10, 300, 60, "", function(v)
