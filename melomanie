@@ -1,0 +1,1027 @@
+--// melomanie | Flee the Facility
+--// Estilo basado en Anchored Alpha ESP by h6rnyx.v
+--// Features: Artsynia & fxengif
+--// RightShift → mostrar / ocultar
+
+-- ============================================================
+-- SERVICIOS
+-- ============================================================
+local Players  = game:GetService("Players")
+local UIS      = game:GetService("UserInputService")
+local TS       = game:GetService("TweenService")
+local RS_svc   = game:GetService("RunService")
+local RS       = game:GetService("ReplicatedStorage")
+local WS       = game:GetService("Workspace")
+local Lighting = game:GetService("Lighting")
+local LP       = Players.LocalPlayer
+local Mouse    = LP:GetMouse()
+
+local Char = LP.Character or LP.CharacterAdded:Wait()
+local Hum  = Char:WaitForChild("Humanoid")
+local HRP  = Char:WaitForChild("HumanoidRootPart")
+
+-- ============================================================
+-- FTF — HELPERS
+-- ============================================================
+local RemoteEvent = RS:FindFirstChild("RemoteEvent") or RS:WaitForChild("RemoteEvent", 5)
+
+local function getMap()
+    local ov = RS:FindFirstChild("CurrentMap", true)
+    if ov and ov:IsA("ObjectValue") and ov.Value then return ov.Value end
+    for _, o in pairs(WS:GetDescendants()) do
+        if o.Name == "FreezePod" then return o.Parent end
+    end
+end
+local function isBeast(p)
+    local s = p:FindFirstChild("TempPlayerStatsModule")
+    return s and s:FindFirstChild("IsBeast") and s.IsBeast.Value == true
+end
+local function isCaptured(p)
+    local s = p:FindFirstChild("TempPlayerStatsModule")
+    return s and s:FindFirstChild("Captured") and s.Captured.Value == true
+end
+local function hasEscaped(p)
+    local s = p:FindFirstChild("TempPlayerStatsModule")
+    return s and s:FindFirstChild("Escaped") and s.Escaped.Value == true
+end
+local function getRoot(char)
+    if not (char and char.Parent) then return end
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+end
+local function getPodEvent(map)
+    if not map then return end
+    for _, o in pairs(map:GetChildren()) do
+        if o.Name ~= "FreezePod" then continue end
+        local pt = o:FindFirstChild("PodTrigger", true)
+        if pt then
+            local ct = pt:FindFirstChild("CapturedTorso")
+            local ev = pt:FindFirstChild("Event")
+            if ct and ev and ct.Value then return ev end
+        end
+    end
+end
+local function getBeastHEvent()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character and p.Character:FindFirstChild("Hammer") then
+            return p.Character:FindFirstChild("HammerEvent", true)
+        end
+    end
+end
+local function getBeastPEvent()
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LP and p.Character and p.Character:FindFirstChild("BeastPowers") then
+            return p.Character:FindFirstChild("PowersEvent", true)
+        end
+    end
+end
+
+-- ============================================================
+-- ESTADO GLOBAL
+-- ============================================================
+local FTF = {
+    hitAura=false, autoTie=false, hitAuraRange=10, tieRange=5,
+    noFail=false, autoHelpSilent=false, autoHelpTP=false,
+    antiFling=false, touchFling=false,
+    antiAFK=false, antiRagdoll=false, notifyAdmin=false,
+    slowBeast=false, beastUntie=false,
+    noclip=false, infJump=false, tpWalk=false, tpWalkSpeed=60,
+    fullBright=false,
+    WPlr={},
+}
+local hookDone      = false
+local anti_afk_conn = nil
+local FB_orig       = nil
+
+-- No-Fail hook
+local function installHook()
+    if hookDone then return end
+    if not (getnamecallmethod and getrawmetatable) then return end
+    local mt = getrawmetatable(game)
+    pcall(function()
+        if setreadonly then setreadonly(mt, false)
+        elseif makewriteable then makewriteable(mt) end
+    end)
+    local old = mt.__namecall
+    local wrap = function(self, ...)
+        local a = {...}
+        if FTF.noFail and getnamecallmethod() == "FireServer" and self == RemoteEvent then
+            if a[1] == "SetPlayerMinigameResult" then a[2] = true end
+        end
+        return old(self, table.unpack(a))
+    end
+    mt.__namecall = (newcclosure and newcclosure(wrap)) or wrap
+    hookDone = true
+end
+pcall(installHook)
+
+-- ============================================================
+-- GUI — VENTANA PRINCIPAL
+-- ============================================================
+local Gui = Instance.new("ScreenGui")
+Gui.Name        = "Melomanie_FTF"
+Gui.ResetOnSpawn = false
+Gui.DisplayOrder = 999
+pcall(function()
+    if gethui then Gui.Parent = gethui()
+    elseif syn and syn.protect_gui then syn.protect_gui(Gui); Gui.Parent = game:GetService("CoreGui")
+    else Gui.Parent = game:GetService("CoreGui") end
+end)
+if not Gui.Parent then Gui.Parent = LP:WaitForChild("PlayerGui") end
+
+local minimized = false
+local WIN_W, WIN_H = 230, 420
+
+local Main = Instance.new("Frame", Gui)
+Main.Size              = UDim2.new(0, WIN_W, 0, WIN_H)
+Main.Position          = UDim2.new(0, 8, 0.5, -WIN_H / 2)
+Main.BackgroundColor3  = Color3.fromRGB(14, 14, 20)
+Main.BorderSizePixel   = 0
+Instance.new("UICorner", Main).CornerRadius = UDim.new(0, 12)
+local mainStroke       = Instance.new("UIStroke", Main)
+mainStroke.Color       = Color3.fromRGB(80, 40, 160)
+mainStroke.Thickness   = 1.5
+
+local fullSize = Main.Size
+local fast     = TweenInfo.new(0.15, Enum.EasingStyle.Quad)
+
+-- ── TOP BAR ─────────────────────────────────────────────────
+local Top = Instance.new("Frame", Main)
+Top.Size             = UDim2.new(1, 0, 0, 42)
+Top.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+Top.BorderSizePixel  = 0
+Instance.new("UICorner", Top).CornerRadius = UDim.new(0, 12)
+
+local TopPatch = Instance.new("Frame", Top)
+TopPatch.Size             = UDim2.new(1, 0, 0.5, 0)
+TopPatch.Position         = UDim2.new(0, 0, 0.5, 0)
+TopPatch.BackgroundColor3 = Top.BackgroundColor3
+TopPatch.BorderSizePixel  = 0
+
+local TitleL = Instance.new("TextLabel", Top)
+TitleL.Size              = UDim2.new(1, -50, 0, 22)
+TitleL.Position          = UDim2.new(0, 10, 0, 4)
+TitleL.Text              = "Melomanie FTF"
+TitleL.Font              = Enum.Font.SourceSansBold
+TitleL.TextSize          = 14
+TitleL.TextColor3        = Color3.fromRGB(200, 170, 255)
+TitleL.TextXAlignment    = Enum.TextXAlignment.Left
+TitleL.BackgroundTransparency = 1
+
+local SubL = Instance.new("TextLabel", Top)
+SubL.Size              = UDim2.new(1, -50, 0, 13)
+SubL.Position          = UDim2.new(0, 10, 0, 25)
+SubL.Text              = "Flee the Facility  •  by @iord4nn.v"
+SubL.Font              = Enum.Font.SourceSans
+SubL.TextSize          = 10
+SubL.TextColor3        = Color3.fromRGB(120, 90, 180)
+SubL.TextXAlignment    = Enum.TextXAlignment.Left
+SubL.BackgroundTransparency = 1
+
+local MinBtn = Instance.new("TextButton", Top)
+MinBtn.Size             = UDim2.new(0, 26, 0, 26)
+MinBtn.Position         = UDim2.new(1, -32, 0.5, -13)
+MinBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+MinBtn.Text             = "-"
+MinBtn.Font             = Enum.Font.SourceSansBold
+MinBtn.TextSize         = 18
+MinBtn.TextColor3       = Color3.fromRGB(60, 40, 0)
+MinBtn.BorderSizePixel  = 0
+Instance.new("UICorner", MinBtn).CornerRadius = UDim.new(1, 0)
+
+MinBtn.MouseButton1Click:Connect(function()
+    minimized      = not minimized
+    MinBtn.Text    = minimized and "+" or "-"
+    TS:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+        Size = minimized and UDim2.new(0, WIN_W, 0, 42) or fullSize
+    }):Play()
+end)
+
+-- Arrastre
+local dragging, dragStart, startPos = false, nil, nil
+Top.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dragging  = true
+        dragStart = i.Position
+        startPos  = Main.Position
+        i.Changed:Connect(function()
+            if i.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+UIS.InputChanged:Connect(function(i)
+    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local d     = i.Position - dragStart
+        Main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + d.X, startPos.Y.Scale, startPos.Y.Offset + d.Y)
+    end
+end)
+
+-- ── SCROLL CONTENT ─────────────────────────────────────────
+local Content = Instance.new("ScrollingFrame", Main)
+Content.Size                 = UDim2.new(1, 0, 1, -42)
+Content.Position             = UDim2.new(0, 0, 0, 42)
+Content.BackgroundTransparency = 1
+Content.BorderSizePixel      = 0
+Content.ScrollBarThickness   = 3
+Content.ScrollBarImageColor3 = Color3.fromRGB(80, 40, 160)
+Content.CanvasSize           = UDim2.new(0, 0, 0, 0)
+Content.AutomaticCanvasSize  = Enum.AutomaticSize.Y
+Content.ClipsDescendants     = true
+
+local Layout  = Instance.new("UIListLayout", Content)
+Layout.Padding = UDim.new(0, 4)
+local CPad    = Instance.new("UIPadding", Content)
+CPad.PaddingTop    = UDim.new(0, 6)
+CPad.PaddingLeft   = UDim.new(0, 8)
+CPad.PaddingRight  = UDim.new(0, 8)
+CPad.PaddingBottom = UDim.new(0, 6)
+
+-- ============================================================
+-- COMPONENTES UI  (idénticos al estilo de referencia)
+-- ============================================================
+local function Section(text)
+    local frame = Instance.new("Frame", Content)
+    frame.Size             = UDim2.new(1, 0, 0, 18)
+    frame.BackgroundColor3 = Color3.fromRGB(30, 25, 50)
+    frame.BorderSizePixel  = 0
+    Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 6)
+    local lbl = Instance.new("TextLabel", frame)
+    lbl.Size              = UDim2.new(1, 0, 1, 0)
+    lbl.Text              = text
+    lbl.Font              = Enum.Font.SourceSansBold
+    lbl.TextSize          = 10
+    lbl.TextColor3        = Color3.fromRGB(160, 120, 255)
+    lbl.BackgroundTransparency = 1
+    lbl.TextXAlignment    = Enum.TextXAlignment.Center
+end
+
+local function Toggle(text, color, onChange)
+    local state = false
+    local row   = Instance.new("Frame", Content)
+    row.Size             = UDim2.new(1, 0, 0, 34)
+    row.BackgroundColor3 = Color3.fromRGB(22, 20, 36)
+    row.BorderSizePixel  = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+    local lbl = Instance.new("TextLabel", row)
+    lbl.Size              = UDim2.new(1, -56, 1, 0)
+    lbl.Position          = UDim2.new(0, 10, 0, 0)
+    lbl.Text              = text
+    lbl.Font              = Enum.Font.SourceSansBold
+    lbl.TextSize          = 12
+    lbl.TextColor3        = Color3.fromRGB(210, 210, 255)
+    lbl.TextXAlignment    = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+
+    local track = Instance.new("TextButton", row)
+    track.Size             = UDim2.new(0, 40, 0, 22)
+    track.Position         = UDim2.new(1, -48, 0.5, -11)
+    track.BackgroundColor3 = Color3.fromRGB(40, 36, 60)
+    track.Text             = ""
+    track.BorderSizePixel  = 0
+    Instance.new("UICorner", track).CornerRadius = UDim.new(1, 0)
+
+    local thumb = Instance.new("Frame", track)
+    thumb.Size             = UDim2.new(0, 16, 0, 16)
+    thumb.Position         = UDim2.new(0, 3, 0.5, -8)
+    thumb.BackgroundColor3 = Color3.new(1, 1, 1)
+    thumb.BorderSizePixel  = 0
+    Instance.new("UICorner", thumb).CornerRadius = UDim.new(1, 0)
+
+    track.MouseButton1Click:Connect(function()
+        state = not state
+        TS:Create(track, fast, { BackgroundColor3 = state and color or Color3.fromRGB(40, 36, 60) }):Play()
+        TS:Create(thumb, fast, { Position = state and UDim2.new(1, -19, 0.5, -8) or UDim2.new(0, 3, 0.5, -8) }):Play()
+        if onChange then onChange(state) end
+    end)
+end
+
+local function Slider(text, minV, maxV, def, unit, onChange)
+    local val  = def or minV
+    unit       = unit or ""
+    local row  = Instance.new("Frame", Content)
+    row.Size             = UDim2.new(1, 0, 0, 52)
+    row.BackgroundColor3 = Color3.fromRGB(22, 20, 36)
+    row.BorderSizePixel  = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 8)
+
+    local topF = Instance.new("Frame", row)
+    topF.Size             = UDim2.new(1, -16, 0, 18)
+    topF.Position         = UDim2.new(0, 8, 0, 6)
+    topF.BackgroundTransparency = 1
+
+    local lbl = Instance.new("TextLabel", topF)
+    lbl.Size           = UDim2.new(0.65, 0, 1, 0)
+    lbl.Text           = text
+    lbl.Font           = Enum.Font.SourceSansBold
+    lbl.TextSize       = 12
+    lbl.TextColor3     = Color3.fromRGB(210, 210, 255)
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.BackgroundTransparency = 1
+
+    local vLbl = Instance.new("TextLabel", topF)
+    vLbl.Size           = UDim2.new(0.35, 0, 1, 0)
+    vLbl.Position       = UDim2.new(0.65, 0, 0, 0)
+    vLbl.Text           = tostring(val) .. unit
+    vLbl.Font           = Enum.Font.SourceSansBold
+    vLbl.TextSize       = 12
+    vLbl.TextColor3     = Color3.fromRGB(160, 120, 255)
+    vLbl.TextXAlignment = Enum.TextXAlignment.Right
+    vLbl.BackgroundTransparency = 1
+
+    local track = Instance.new("Frame", row)
+    track.Size             = UDim2.new(1, -16, 0, 5)
+    track.Position         = UDim2.new(0, 8, 0, 30)
+    track.BackgroundColor3 = Color3.fromRGB(40, 36, 60)
+    track.BorderSizePixel  = 0
+    Instance.new("UICorner", track).CornerRadius = UDim.new(0, 3)
+
+    local pct  = (val - minV) / math.max(maxV - minV, 1)
+    local fill = Instance.new("Frame", track)
+    fill.Size             = UDim2.new(pct, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(100, 60, 200)
+    fill.BorderSizePixel  = 0
+    Instance.new("UICorner", fill).CornerRadius = UDim.new(0, 3)
+
+    local knob = Instance.new("Frame", track)
+    knob.Size             = UDim2.fromOffset(14, 14)
+    knob.Position         = UDim2.new(pct, -7, 0.5, -7)
+    knob.BackgroundColor3 = Color3.fromRGB(200, 170, 255)
+    knob.BorderSizePixel  = 0
+    Instance.new("UICorner", knob).CornerRadius = UDim.new(1, 0)
+
+    local drag = false
+    local hit  = Instance.new("TextButton", row)
+    hit.Size     = UDim2.new(1, -16, 0, 22)
+    hit.Position = UDim2.new(0, 8, 0, 22)
+    hit.BackgroundTransparency = 1
+    hit.Text     = ""
+    hit.ZIndex   = 5
+
+    local function upd(x)
+        local ap = track.AbsolutePosition.X
+        local az = track.AbsoluteSize.X
+        if az == 0 then return end
+        local r = math.clamp((x - ap) / az, 0, 1)
+        val = math.floor(minV + r * (maxV - minV))
+        vLbl.Text     = tostring(val) .. unit
+        fill.Size     = UDim2.new(r, 0, 1, 0)
+        knob.Position = UDim2.new(r, -7, 0.5, -7)
+        if onChange then onChange(val) end
+    end
+
+    hit.MouseButton1Down:Connect(function()
+        drag = true; upd(Mouse.X)
+        local c; c = RS_svc.Heartbeat:Connect(function()
+            if drag then upd(Mouse.X) else c:Disconnect() end
+        end)
+    end)
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
+    end)
+end
+
+local function InfoRow(key, value, vc)
+    local row = Instance.new("Frame", Content)
+    row.Size             = UDim2.new(1, 0, 0, 26)
+    row.BackgroundColor3 = Color3.fromRGB(20, 18, 32)
+    row.BorderSizePixel  = 0
+    Instance.new("UICorner", row).CornerRadius = UDim.new(0, 6)
+
+    local kL = Instance.new("TextLabel", row)
+    kL.Size           = UDim2.new(0.55, -8, 1, 0)
+    kL.Position       = UDim2.new(0, 8, 0, 0)
+    kL.Text           = key
+    kL.Font           = Enum.Font.SourceSans
+    kL.TextSize       = 12
+    kL.TextColor3     = Color3.fromRGB(140, 120, 180)
+    kL.TextXAlignment = Enum.TextXAlignment.Left
+    kL.BackgroundTransparency = 1
+
+    local vL = Instance.new("TextLabel", row)
+    vL.Size           = UDim2.new(0.45, -8, 1, 0)
+    vL.Position       = UDim2.new(0.55, 0, 0, 0)
+    vL.Text           = value
+    vL.Font           = Enum.Font.SourceSansBold
+    vL.TextSize       = 12
+    vL.TextColor3     = vc or Color3.fromRGB(200, 170, 255)
+    vL.TextXAlignment = Enum.TextXAlignment.Right
+    vL.BackgroundTransparency = 1
+    return vL
+end
+
+-- ============================================================
+-- FEATURES — BEAST
+-- ============================================================
+Section("~ BEAST (eres la Bestia) ~")
+
+Slider("Hit Aura Range", 5, 15, 10, " st", function(v)
+    FTF.hitAuraRange = v
+end)
+
+Toggle("Hit Aura", Color3.fromRGB(255, 80, 80), function(v)
+    FTF.hitAura = v
+    if v then task.spawn(function()
+        while FTF.hitAura do
+            local LHE = Char:FindFirstChild("HammerEvent", true)
+            for _, p in pairs(Players:GetPlayers()) do
+                if p == LP or FTF.WPlr[p.Name] then continue end
+                local S = p:FindFirstChild("TempPlayerStatsModule"); if not S then continue end
+                local R = S:FindFirstChild("Ragdoll"); local Cap = S:FindFirstChild("Captured")
+                if not(R and Cap) then continue end
+                if not(R.Value or Cap.Value) then
+                    local root = getRoot(p.Character)
+                    if root and HRP and LHE and (root.Position - HRP.Position).Magnitude <= FTF.hitAuraRange then
+                        LHE:FireServer("HammerHit", root)
+                    end
+                end
+            end
+            task.wait(0.15)
+        end
+    end) end
+end)
+
+Slider("Auto Tie Range", 5, 100, 5, " st", function(v)
+    FTF.tieRange = v
+end)
+
+Toggle("Auto Tie", Color3.fromRGB(255, 120, 50), function(v)
+    FTF.autoTie = v
+    if v then task.spawn(function()
+        while FTF.autoTie do
+            local LHE = Char:FindFirstChild("HammerEvent", true)
+            for _, p in pairs(Players:GetPlayers()) do
+                if p == LP or FTF.WPlr[p.Name] then continue end
+                local S = p:FindFirstChild("TempPlayerStatsModule"); if not S then continue end
+                local R = S:FindFirstChild("Ragdoll"); local Cap = S:FindFirstChild("Captured")
+                if not(R and Cap) then continue end
+                if R.Value and not Cap.Value then
+                    local root = getRoot(p.Character)
+                    if root and HRP and LHE and (root.Position - HRP.Position).Magnitude <= FTF.tieRange then
+                        LHE:FireServer("HammerTieUp", root, root.Position)
+                    end
+                end
+            end
+            task.wait(0.15)
+        end
+    end) end
+end)
+
+-- ============================================================
+-- FEATURES — SURVIVOR
+-- ============================================================
+Section("~ SURVIVOR (eres Survivor) ~")
+
+Toggle("No Hack Failed", Color3.fromRGB(0, 200, 255), function(v)
+    FTF.noFail = v
+    if v and not hookDone then
+        task.spawn(function()
+            while FTF.noFail do
+                pcall(function() RemoteEvent:FireServer("SetPlayerMinigameResult", true) end)
+                task.wait(0.12)
+            end
+        end)
+    end
+end)
+
+Toggle("Auto Help (Silencioso)", Color3.fromRGB(100, 220, 100), function(v)
+    FTF.autoHelpSilent = v
+    if v then task.spawn(function()
+        local SLP = LP:FindFirstChild("TempPlayerStatsModule")
+        local LH  = SLP and SLP:FindFirstChild("Health")
+        local LR  = SLP and SLP:FindFirstChild("Ragdoll")
+        local LC  = SLP and SLP:FindFirstChild("Captured")
+        while FTF.autoHelpSilent do
+            local map = getMap()
+            if map and LH and LR and LC and LH.Value > 0 and not LR.Value and not LC.Value then
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p == LP then continue end
+                    if isCaptured(p) then
+                        local ev = getPodEvent(map)
+                        if ev then
+                            repeat task.wait(0.05)
+                                pcall(function()
+                                    RemoteEvent:FireServer("Input", "Trigger", true, ev)
+                                    RemoteEvent:FireServer("Input", "Action", true)
+                                end)
+                            until not (isCaptured(p) and FTF.autoHelpSilent)
+                            break
+                        end
+                    end
+                end
+            end
+            task.wait(0.05)
+        end
+    end) end
+end)
+
+Toggle("Auto Help (Teletransporte)", Color3.fromRGB(255, 200, 0), function(v)
+    FTF.autoHelpTP = v
+    if v then task.spawn(function()
+        local function DoCF(root)
+            return root.CFrame * CFrame.new(0, -4.5, 0) * CFrame.Angles(math.rad(90), 0, 0)
+        end
+        local oldCF, helping = nil, false
+        local SLP = LP:FindFirstChild("TempPlayerStatsModule")
+        local LH  = SLP and SLP:FindFirstChild("Health")
+        local LR  = SLP and SLP:FindFirstChild("Ragdoll")
+        local LC  = SLP and SLP:FindFirstChild("Captured")
+        while FTF.autoHelpTP do
+            if LH and LR and LC and LH.Value > 0 and not LR.Value and not LC.Value then
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p == LP or helping then continue end
+                    if not isCaptured(p) then continue end
+                    local root = getRoot(p.Character); if not root then continue end
+                    helping = true; oldCF = oldCF or HRP.CFrame; HRP.CFrame = DoCF(root)
+                    repeat
+                        task.wait(0.05); HRP.CFrame = DoCF(root)
+                        pcall(function() RemoteEvent:FireServer("Input", "Action", true) end)
+                    until not (isCaptured(p) and FTF.autoHelpTP) or (LR.Value or LC.Value or LH.Value <= 0)
+                    if oldCF and Char then Char:PivotTo(oldCF) end
+                    oldCF, helping = nil, false; break
+                end
+            end
+            task.wait(0.05)
+        end
+    end) end
+end)
+
+Toggle("Anti Fling", Color3.fromRGB(180, 160, 255), function(v)
+    FTF.antiFling = v
+    if v then task.spawn(function()
+        while FTF.antiFling do
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= LP and p.Character then
+                    for _, c in pairs(p.Character:GetDescendants()) do
+                        if c:IsA("BasePart") then
+                            if c.CanCollide then c.CanCollide = false
+                            elseif not (c.CanCollide or FTF.antiFling) then c.CanCollide = true; break end
+                        end
+                    end
+                end
+            end
+            RS_svc.Heartbeat:Wait()
+        end
+    end) end
+end)
+
+Toggle("Touch Fling", Color3.fromRGB(255, 60, 60), function(v)
+    FTF.touchFling = v
+    if v then task.spawn(function()
+        local vel, movel = nil, 0.05
+        while FTF.touchFling do
+            RS_svc.Heartbeat:Wait()
+            vel = HRP.Velocity; HRP.Velocity = (vel * 9e8) + Vector3.new(0, 9e8, 0)
+            RS_svc.RenderStepped:Wait()
+            if Char and HRP then HRP.Velocity = vel end
+            RS_svc.Stepped:Wait()
+            if Char and HRP then HRP.Velocity, movel = vel + Vector3.new(0, movel, 0), movel * -1 end
+        end
+    end) end
+end)
+
+-- ============================================================
+-- FEATURES — ESP
+-- ============================================================
+Section("~ ESP ~")
+
+Toggle("Player ESP", Color3.fromRGB(100, 180, 255), function(v)
+    if v then
+        RS_svc:BindToRenderStep("MEL_PESP", 1, function()
+            for _, p in pairs(Players:GetPlayers()) do
+                if p == LP or not p.Character then continue end
+                local char = p.Character
+
+                if not char:FindFirstChild("_mel_hl") then
+                    local h = Instance.new("Highlight", char); h.Name = "_mel_hl"
+                    h.FillTransparency   = 0.4
+                    h.OutlineTransparency = 0
+                    h.DepthMode          = Enum.HighlightDepthMode.AlwaysOnTop
+                end
+                local hl = char:FindFirstChild("_mel_hl")
+                if hl then
+                    if isBeast(p) then
+                        hl.FillColor = Color3.fromRGB(255,60,60); hl.OutlineColor = Color3.fromRGB(255,120,120)
+                    elseif isCaptured(p) then
+                        hl.FillColor = Color3.fromRGB(255,200,80); hl.OutlineColor = Color3.fromRGB(255,220,130)
+                    else
+                        hl.FillColor = Color3.fromRGB(100,180,255); hl.OutlineColor = Color3.fromRGB(160,210,255)
+                    end
+                end
+
+                local head = char:FindFirstChild("Head")
+                if head and not head:FindFirstChild("_mel_bb") then
+                    local bb = Instance.new("BillboardGui", head); bb.Name = "_mel_bb"
+                    bb.Size = UDim2.fromOffset(150, 44); bb.StudsOffset = Vector3.new(0, 2.8, 0); bb.AlwaysOnTop = true
+                    local nL = Instance.new("TextLabel", bb); nL.Name = "N"
+                    nL.Size = UDim2.new(1,0,0.55,0); nL.Font = Enum.Font.SourceSansBold; nL.TextSize = 13
+                    nL.BackgroundTransparency = 1; nL.TextStrokeTransparency = 0.3
+                    local sL = Instance.new("TextLabel", bb); sL.Name = "S"
+                    sL.Size = UDim2.new(1,0,0.45,0); sL.Position = UDim2.new(0,0,0.55,0)
+                    sL.Font = Enum.Font.SourceSans; sL.TextSize = 11
+                    sL.BackgroundTransparency = 1; sL.TextStrokeTransparency = 0.3
+                end
+
+                local bb = head and head:FindFirstChild("_mel_bb"); if not bb then continue end
+                local nL, sL   = bb:FindFirstChild("N"), bb:FindFirstChild("S")
+                local myHRP    = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+                local thHRP    = char:FindFirstChild("HumanoidRootPart")
+
+                if nL then
+                    if isBeast(p) then nL.Text = "BEAST: "..p.Name; nL.TextColor3 = Color3.fromRGB(255,80,80)
+                    else nL.Text = p.Name; nL.TextColor3 = Color3.fromRGB(200,220,255) end
+                end
+                if sL then
+                    if isBeast(p) then sL.Text = ""
+                    elseif isCaptured(p) then sL.Text = "⛓ Capturado"; sL.TextColor3 = Color3.fromRGB(255,200,80)
+                    elseif hasEscaped(p) then sL.Text = "✓ Escapó"; sL.TextColor3 = Color3.fromRGB(80,255,160)
+                    elseif myHRP and thHRP then
+                        sL.Text = math.floor((myHRP.Position - thHRP.Position).Magnitude).."m"
+                        sL.TextColor3 = Color3.fromRGB(160,210,255)
+                    else sL.Text = "" end
+                end
+            end
+        end)
+    else
+        RS_svc:UnbindFromRenderStep("MEL_PESP")
+        for _, p in pairs(Players:GetPlayers()) do
+            if p.Character then
+                local h = p.Character:FindFirstChild("_mel_hl"); if h then h:Destroy() end
+                local head = p.Character:FindFirstChild("Head")
+                if head then local b = head:FindFirstChild("_mel_bb"); if b then b:Destroy() end end
+            end
+        end
+    end
+end)
+
+Toggle("Computer ESP", Color3.fromRGB(0, 220, 180), function(v)
+    if v then
+        RS_svc:BindToRenderStep("MEL_CESP", 1, function()
+            for _, obj in pairs(WS:GetDescendants()) do
+                if obj.Name ~= "ComputerTable" then continue end
+                local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart"))
+                             or (obj:IsA("BasePart") and obj)
+                if not target then continue end
+                if not obj:FindFirstChild("_mel_chl") then
+                    local h = Instance.new("Highlight", obj); h.Name = "_mel_chl"
+                    h.FillTransparency = 0.4; h.OutlineTransparency = 0
+                    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                end
+                if not target:FindFirstChild("_mel_cbb") then
+                    local bb = Instance.new("BillboardGui", target); bb.Name = "_mel_cbb"
+                    bb.Size = UDim2.fromOffset(130, 44); bb.StudsOffset = Vector3.new(0, 4, 0); bb.AlwaysOnTop = true
+                    local nL = Instance.new("TextLabel", bb); nL.Name = "N"
+                    nL.Size = UDim2.new(1,0,0.5,0); nL.Text = "Computer"
+                    nL.Font = Enum.Font.SourceSansBold; nL.TextSize = 11
+                    nL.BackgroundTransparency = 1; nL.TextStrokeTransparency = 0.3
+                    local sL = Instance.new("TextLabel", bb); sL.Name = "S"
+                    sL.Size = UDim2.new(1,0,0.5,0); sL.Position = UDim2.new(0,0,0.5,0)
+                    sL.Font = Enum.Font.SourceSans; sL.TextSize = 11
+                    sL.BackgroundTransparency = 1; sL.TextStrokeTransparency = 0.3
+                end
+                local hl = obj:FindFirstChild("_mel_chl")
+                local bb = target:FindFirstChild("_mel_cbb")
+                if not (hl and bb) then continue end
+                local scr    = obj:FindFirstChild("Screen", true)
+                local hacked = scr and scr:IsA("BasePart") and scr.Color.G > 0.6 and scr.Color.R < 0.4
+                local nL, sL = bb:FindFirstChild("N"), bb:FindFirstChild("S")
+                local dist   = HRP and math.floor((target.Position - HRP.Position).Magnitude) or 0
+                if hacked then
+                    hl.FillColor = Color3.fromRGB(80,255,80); hl.OutlineColor = Color3.fromRGB(150,255,150)
+                    if nL then nL.TextColor3 = Color3.fromRGB(80,255,80) end
+                    if sL then sL.Text = "HACKEADO  "..dist.."m"; sL.TextColor3 = Color3.fromRGB(80,255,80) end
+                else
+                    hl.FillColor = Color3.fromRGB(0,180,255); hl.OutlineColor = Color3.fromRGB(100,220,255)
+                    if nL then nL.TextColor3 = Color3.fromRGB(100,220,255) end
+                    if sL then sL.Text = "Pendiente  "..dist.."m"; sL.TextColor3 = Color3.fromRGB(100,220,255) end
+                end
+            end
+        end)
+    else
+        RS_svc:UnbindFromRenderStep("MEL_CESP")
+        for _, obj in pairs(WS:GetDescendants()) do
+            local h = obj:FindFirstChild("_mel_chl"); if h then h:Destroy() end
+            local b = obj:FindFirstChild("_mel_cbb"); if b then b:Destroy() end
+        end
+    end
+end)
+
+Toggle("FreezePod ESP", Color3.fromRGB(180, 100, 255), function(v)
+    if v then
+        RS_svc:BindToRenderStep("MEL_PESP2", 1, function()
+            local map = getMap(); if not map then return end
+            for _, obj in pairs(map:GetChildren()) do
+                if obj.Name ~= "FreezePod" then continue end
+                local part = obj:FindFirstChildWhichIsA("BasePart"); if not part then continue end
+                if not obj:FindFirstChild("_mel_phl") then
+                    local h = Instance.new("Highlight", obj); h.Name = "_mel_phl"
+                    h.FillColor = Color3.fromRGB(180,100,255); h.OutlineColor = Color3.fromRGB(220,160,255)
+                    h.FillTransparency = 0.35; h.OutlineTransparency = 0
+                    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                end
+                if not part:FindFirstChild("_mel_pbb") then
+                    local bb = Instance.new("BillboardGui", part); bb.Name = "_mel_pbb"
+                    bb.Size = UDim2.fromOffset(140, 22); bb.StudsOffset = Vector3.new(0, 4, 0); bb.AlwaysOnTop = true
+                    local lbl = Instance.new("TextLabel", bb); lbl.Name = "L"
+                    lbl.Size = UDim2.new(1,0,1,0); lbl.Font = Enum.Font.SourceSansBold; lbl.TextSize = 12
+                    lbl.BackgroundTransparency = 1; lbl.TextStrokeTransparency = 0.3
+                end
+                local bb  = part:FindFirstChild("_mel_pbb")
+                local lbl = bb and bb:FindFirstChild("L")
+                local frozen = nil
+                for _, p in pairs(Players:GetPlayers()) do
+                    if isCaptured(p) and p.Character then
+                        local r = getRoot(p.Character)
+                        if r and (part.Position - r.Position).Magnitude < 10 then frozen = p.Name end
+                    end
+                end
+                if lbl then
+                    local dist = HRP and math.floor((part.Position - HRP.Position).Magnitude) or 0
+                    if frozen then lbl.Text = frozen.." (frozen)  "..dist.."m"; lbl.TextColor3 = Color3.fromRGB(100,180,255)
+                    else lbl.Text = "Pod — vacío  "..dist.."m"; lbl.TextColor3 = Color3.fromRGB(220,160,255) end
+                end
+            end
+        end)
+    else
+        RS_svc:UnbindFromRenderStep("MEL_PESP2")
+        for _, obj in pairs(WS:GetDescendants()) do
+            local h = obj:FindFirstChild("_mel_phl"); if h then h:Destroy() end
+            local b = obj:FindFirstChild("_mel_pbb"); if b then b:Destroy() end
+        end
+    end
+end)
+
+Toggle("Exit Door ESP", Color3.fromRGB(255, 210, 50), function(v)
+    if v then
+        RS_svc:BindToRenderStep("MEL_DESP", 1, function()
+            local map = getMap(); if not map then return end
+            for _, obj in pairs(map:GetChildren()) do
+                if obj.Name ~= "ExitDoor" then continue end
+                local part  = obj:FindFirstChildWhichIsA("BasePart"); if not part then continue end
+                local light = obj:FindFirstChild("Light")
+                local col   = (light and light:IsA("BasePart") and light.Color) or Color3.fromRGB(255, 220, 0)
+                if not obj:FindFirstChild("_mel_dhl") then
+                    local h = Instance.new("Highlight", obj); h.Name = "_mel_dhl"
+                    h.FillTransparency = 0.35; h.OutlineTransparency = 0
+                    h.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                end
+                if not part:FindFirstChild("_mel_dbb") then
+                    local bb = Instance.new("BillboardGui", part); bb.Name = "_mel_dbb"
+                    bb.Size = UDim2.fromOffset(130, 22); bb.StudsOffset = Vector3.new(0, 4, 0); bb.AlwaysOnTop = true
+                    local lbl = Instance.new("TextLabel", bb); lbl.Name = "L"
+                    lbl.Size = UDim2.new(1,0,1,0); lbl.Font = Enum.Font.SourceSansBold; lbl.TextSize = 12
+                    lbl.BackgroundTransparency = 1; lbl.TextStrokeTransparency = 0.3
+                end
+                local hl  = obj:FindFirstChild("_mel_dhl")
+                local bb  = part:FindFirstChild("_mel_dbb")
+                local lbl = bb and bb:FindFirstChild("L")
+                local dist = HRP and math.floor((part.Position - HRP.Position).Magnitude) or 0
+                if hl then hl.FillColor = col; hl.OutlineColor = col end
+                if lbl then lbl.Text = "Salida  "..dist.."m"; lbl.TextColor3 = col end
+            end
+        end)
+    else
+        RS_svc:UnbindFromRenderStep("MEL_DESP")
+        for _, obj in pairs(WS:GetDescendants()) do
+            local h = obj:FindFirstChild("_mel_dhl"); if h then h:Destroy() end
+            local b = obj:FindFirstChild("_mel_dbb"); if b then b:Destroy() end
+        end
+    end
+end)
+
+Toggle("Fullbright", Color3.fromRGB(255, 255, 100), function(v)
+    FTF.fullBright = v
+    if v then
+        FB_orig = {
+            Brightness=Lighting.Brightness, ClockTime=Lighting.ClockTime,
+            FogEnd=Lighting.FogEnd, FogStart=Lighting.FogStart,
+            GlobalShadows=Lighting.GlobalShadows,
+            OutdoorAmbient=Lighting.OutdoorAmbient, Ambient=Lighting.Ambient
+        }
+        local atm = Lighting:FindFirstChildOfClass("Atmosphere")
+        if atm then FB_orig.AtmD = atm.Density end
+        task.spawn(function()
+            while FTF.fullBright do
+                local a = Lighting:FindFirstChildOfClass("Atmosphere"); if a then a.Density = 0 end
+                Lighting.Brightness = 1.5; Lighting.ClockTime = 14; Lighting.FogEnd = 100000
+                Lighting.FogStart = 0; Lighting.GlobalShadows = false
+                Lighting.OutdoorAmbient = Color3.fromRGB(100,100,100)
+                Lighting.Ambient        = Color3.fromRGB(80,80,80)
+                task.wait()
+            end
+        end)
+    else
+        if FB_orig then
+            task.wait(0.25)
+            for prop, val in pairs(FB_orig) do
+                if prop == "AtmD" then
+                    local a = Lighting:FindFirstChildOfClass("Atmosphere"); if a then a.Density = val end
+                else Lighting[prop] = val end
+            end
+        end
+    end
+end)
+
+-- ============================================================
+-- FEATURES — LOCAL
+-- ============================================================
+Section("~ LOCAL ~")
+
+Toggle("Infinity Jump", Color3.fromRGB(160, 120, 255), function(v)
+    FTF.infJump = v
+end)
+
+Toggle("Noclip", Color3.fromRGB(160, 120, 255), function(v)
+    FTF.noclip = v
+end)
+
+Slider("TP Walk Speed", 10, 300, 60, "", function(v)
+    FTF.tpWalkSpeed = v
+end)
+
+Toggle("TP Walk", Color3.fromRGB(96, 165, 250), function(v)
+    FTF.tpWalk = v
+    if v then task.spawn(function()
+        while FTF.tpWalk do
+            local dt = RS_svc.Heartbeat:Wait()
+            if Char and Hum then
+                local move = Hum.MoveDirection
+                if move.Magnitude > 0 then Char:TranslateBy(move * FTF.tpWalkSpeed * dt * 10) end
+            end
+        end
+    end) end
+end)
+
+-- ============================================================
+-- FEATURES — ANTI
+-- ============================================================
+Section("~ ANTI ~")
+
+Toggle("Anti AFK", Color3.fromRGB(0, 210, 140), function(v)
+    FTF.antiAFK = v
+    local VU = game:GetService("VirtualUser")
+    if v then
+        if not anti_afk_conn then
+            anti_afk_conn = LP.Idled:Connect(function()
+                VU:CaptureController(); VU:ClickButton2(Vector2.zero)
+            end)
+        end
+    else
+        if anti_afk_conn then anti_afk_conn:Disconnect(); anti_afk_conn = nil end
+    end
+end)
+
+Toggle("Anti Ragdoll", Color3.fromRGB(0, 210, 140), function(v)
+    FTF.antiRagdoll = v
+    if v then task.spawn(function()
+        while FTF.antiRagdoll do
+            pcall(function()
+                Hum:SetStateEnabled(Enum.HumanoidStateType.Physics,         false)
+                Hum:SetStateEnabled(Enum.HumanoidStateType.Ragdoll,          false)
+                Hum:SetStateEnabled(Enum.HumanoidStateType.PlatformStanding, false)
+                local S = LP:FindFirstChild("TempPlayerStatsModule")
+                local R = S and S:FindFirstChild("Ragdoll")
+                if R and R:IsA("BoolValue") and R.Value then
+                    repeat task.wait(); Hum:ChangeState(6); Hum:ChangeState(8)
+                    until Hum:GetState() == Enum.HumanoidStateType.Running
+                end
+            end)
+            task.wait()
+        end
+    end) end
+end)
+
+Toggle("Notify Admin Join", Color3.fromRGB(255, 175, 0), function(v)
+    FTF.notifyAdmin = v
+    if v then task.spawn(function()
+        local creId, cretype = game.CreatorId, game.CreatorType
+        while FTF.notifyAdmin do
+            for _, p in pairs(Players:GetPlayers()) do
+                if cretype == Enum.CreatorType.Group then
+                    pcall(function()
+                        local rank = p:GetRankInGroup(creId)
+                        if rank >= 2 then
+                            game:GetService("StarterGui"):SetCore("SendNotification", {
+                                Title = p.Name.." entró!",
+                                Text  = "Rol: "..p:GetRoleInGroup(creId).." | Rango: "..rank,
+                                Duration = 3
+                            })
+                        end
+                    end)
+                elseif cretype == Enum.CreatorType.User and p.UserId == creId then
+                    game:GetService("StarterGui"):SetCore("SendNotification", {
+                        Title = p.Name.." entró!", Text = "Rol: Dueño del juego", Duration = 3
+                    })
+                end
+            end
+            task.wait(2.5)
+        end
+    end) end
+end)
+
+-- ============================================================
+-- FEATURES — GAME / RAGEBAIT
+-- ============================================================
+Section("~ GAME / RAGEBAIT ~")
+
+Toggle("Slow Beast", Color3.fromRGB(255, 80, 80), function(v)
+    FTF.slowBeast = v
+    if v then task.spawn(function()
+        while FTF.slowBeast do
+            local ev = getBeastPEvent()
+            if ev then pcall(function() ev:FireServer("Jumped") end) end
+            task.wait(0.03)
+        end
+    end) end
+end)
+
+Toggle("Beast Untie Player", Color3.fromRGB(255, 130, 50), function(v)
+    if v then task.spawn(function()
+        while v do
+            local ev = getBeastHEvent()
+            if ev then pcall(function() ev:FireServer("HammerClick", true) end) end
+            task.wait(0.05)
+        end
+    end) end
+end)
+
+-- ============================================================
+-- INFO
+-- ============================================================
+Section("~ INFO ~")
+InfoRow("Juego:",      "Flee the Facility")
+InfoRow("Toggle:",     "RightShift")
+InfoRow("Script:",     "by @iord4nn.v")
+
+-- ============================================================
+-- HOTKEYS
+-- ============================================================
+UIS.InputBegan:Connect(function(i, gp)
+    if gp then return end
+    if i.KeyCode == Enum.KeyCode.RightShift then Main.Visible = not Main.Visible end
+end)
+
+-- ============================================================
+-- GAME LOOPS
+-- ============================================================
+RS_svc.Stepped:Connect(function()
+    if FTF.noclip and Char then
+        for _, p in pairs(Char:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanCollide = false end
+        end
+    end
+end)
+
+UIS.JumpRequest:Connect(function()
+    if FTF.infJump and Hum then Hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+end)
+
+LP.CharacterAdded:Connect(function(c)
+    Char = c
+    Hum  = c:WaitForChild("Humanoid")
+    HRP  = c:WaitForChild("HumanoidRootPart")
+end)
+
+-- ============================================================
+-- NOTIFICACIÓN DE INICIO
+-- ============================================================
+local function Notify(title, body)
+    local n = Instance.new("Frame", Gui)
+    n.Size             = UDim2.fromOffset(260, 56)
+    n.Position         = UDim2.new(1, 10, 1, -68)
+    n.BackgroundColor3 = Color3.fromRGB(16, 14, 26)
+    n.BorderSizePixel  = 0
+    n.ZIndex           = 100
+    Instance.new("UICorner", n).CornerRadius = UDim.new(0, 10)
+    local st = Instance.new("UIStroke", n)
+    st.Color = Color3.fromRGB(80, 40, 160); st.Thickness = 1.2
+
+    local bar = Instance.new("Frame", n)
+    bar.Size             = UDim2.fromOffset(3, 56)
+    bar.BackgroundColor3 = Color3.fromRGB(120, 60, 240)
+    bar.BorderSizePixel  = 0
+    Instance.new("UICorner", bar).CornerRadius = UDim.new(0, 2)
+
+    local tL = Instance.new("TextLabel", n)
+    tL.Size = UDim2.new(1,-14,0,20); tL.Position = UDim2.fromOffset(12, 8)
+    tL.Text = title; tL.Font = Enum.Font.SourceSansBold; tL.TextSize = 13
+    tL.TextColor3 = Color3.fromRGB(200,170,255); tL.BackgroundTransparency = 1
+    tL.TextXAlignment = Enum.TextXAlignment.Left; tL.ZIndex = 100
+
+    local bL = Instance.new("TextLabel", n)
+    bL.Size = UDim2.new(1,-14,0,16); bL.Position = UDim2.fromOffset(12, 30)
+    bL.Text = body; bL.Font = Enum.Font.SourceSans; bL.TextSize = 11
+    bL.TextColor3 = Color3.fromRGB(120,90,180); bL.BackgroundTransparency = 1
+    bL.TextXAlignment = Enum.TextXAlignment.Left; bL.ZIndex = 100
+
+    TS:Create(n, TweenInfo.new(0.38, Enum.EasingStyle.Quad), { Position = UDim2.new(1,-274,1,-68) }):Play()
+    task.delay(3.5, function()
+        TS:Create(n, TweenInfo.new(0.38, Enum.EasingStyle.Quad), { Position = UDim2.new(1,10,1,-68) }):Play()
+        task.delay(0.42, function() n:Destroy() end)
+    end)
+end
+
+task.delay(0.6, function()
+    Notify("melomanie — FTF", "RightShift para ocultar/mostrar")
+end)
+trar")
+end)
